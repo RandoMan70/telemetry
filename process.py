@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import json
 import yaml
 import re
 import sys
@@ -7,16 +8,41 @@ from os import walk
 import matplotlib.path as mpltPath
 import numpy as np
 
-path = "../"
+path = "../telemetry-data/2021-01-31/"
 
-with open('sectors', 'r') as file:
-    # The FullLoader parameter handles the conversion from YAML
-    # scalar values to Python the dictionary format
-    sectors = yaml.load(file, Loader=yaml.FullLoader)
+class Sectors:
+    def __init__(self, file_path):
+        self.polys = {}
+        with open(file_path) as json_file:
+            data = json.load(json_file)
+            for feature in data['features']:
+                name = feature['properties']['name']
+                coord3d = feature['geometry']['coordinates']
+                coord2d = []
+                for c in coord3d[0]:
+                    coord2d.append([c[0], c[1]])
+                self.polys[name] =  mpltPath.Path(coord2d)
+                print("Loaded sector", name)
 
-print(sectors)
-#sys.exit(1)
-pre_finish_sector = mpltPath.Path(sectors['pre_finish'])
+        self.track = self.polys['Track']
+        self.pre_finish = self.polys['PreFinish_Sector']
+        self.post_finish = self.polys['PostFinish_Sector']
+        self.opposite_marker = self.polys['Opposite_Marker']
+        self.pitlane = self.polys['Pitlane']
+        self.pitlane_gates = self.polys['Pitlane_Gates']
+        self.pitlane_entry = self.polys['Pitlane_entry']
+        self.pitlane_exit = self.polys['Pitlane_Exit']
+        self.paddock = self.polys['Paddock']
+
+#        self.transitions = {}
+#        self.transitions[track] = [pitlane_entry, pitlane_exit]
+#        self.transitions[pitlane] = [pitlane_entry, pitlane_exit, pitlane_gates]
+#        self.transitions[paddock] = [pitlane_gates]
+#        self.transitions[pitlane_entry] = [track, pitlane]
+#        self.transitions[pitlane_exit] = [track, pitlane]
+#        self.transitions[pitlane_gates] = [paddock, pitlane]
+
+sectors = Sectors("sectors.geojson")
 
 def files(path):
     _, _, filenames = next(walk(path))
@@ -61,15 +87,10 @@ for filename in files(path):
                 if m.group(12):
                     direction=float(m.group(12))
 
-                point = [[lat, lon]]
-#                print(point)
-                if pre_finish_sector.contains_points(point):
-                    print(l)
+                point = [[lon, lat]]
 
-#                print(l)
-#                print(m.groups())
-#                if speed > 30:
-#                    print(DD,MM,YY, lat, lon, speed, direction)
-#                print(lat, lon)
-#                print(m.group(5), m.group(7), m.group(9))
+                if sectors.pre_finish.contains_points(point):
+                    print("{}:{}:{}.{} pre_finish".format(hh, mm, ss, ms/100))
 
+                if sectors.post_finish.contains_points(point):
+                    print("{}:{}:{}.{} post_finish".format(hh, mm, ss, ms/100))
