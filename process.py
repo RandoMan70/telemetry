@@ -150,7 +150,7 @@ for filename in files(path):
                     cross = np.cross(finish_direction - finish_center, moving_point - finish_center)
                     sign = cross/np.abs(cross) 
                     dist = sign * norm(cross)/norm(finish_direction - finish_center)
-                    print("{} {}".format(hh*3600+mm*60+ss+ms/1000, dist))
+                    print("{} {} {}".format(hh*3600+mm*60+ss+ms/1000, dist, speed))
 
                 # if pre_finish:
                 #     print("{}:{}:{}.{} pre_finish {}".format(hh, mm, ss, ms/100, dist))
