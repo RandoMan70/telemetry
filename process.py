@@ -1,28 +1,41 @@
 #!/usr/bin/env python3
 
 import json
-import yaml
 import re
 import sys
 from os import walk
-import matplotlib.path as mpltPath
 import numpy as np
+from numpy.linalg import norm
+import matplotlib.path as mpltPath
+import matplotlib.lines as mpltLines
 
 path = "../telemetry-data/2021-01-31/"
 
 class Sectors:
     def __init__(self, file_path):
         self.polys = {}
+        self.lines = {}
         with open(file_path) as json_file:
             data = json.load(json_file)
             for feature in data['features']:
                 name = feature['properties']['name']
+                otype = feature['geometry']['type']
+
                 coord3d = feature['geometry']['coordinates']
-                coord2d = []
-                for c in coord3d[0]:
-                    coord2d.append([c[0], c[1]])
-                self.polys[name] =  mpltPath.Path(coord2d)
-                print("Loaded sector", name)
+                if otype.lower() == 'polygon':
+                    coord2d = []
+                    for c in coord3d[0]:
+                        coord2d.append([c[0], c[1]])
+
+                    self.polys[name] =  mpltPath.Path(coord2d)
+                    print("Loaded polygon {}".format(name))
+                if otype.lower() == 'linestring':
+                    coord2d = []
+                    for c in coord3d:
+                        coord2d.append([c[0], c[1]])
+
+                    self.lines[name] = coord2d
+                    print("Loaded line {}".format(name))
 
         self.track = self.polys['Track']
         self.pre_finish = self.polys['PreFinish_Sector']
@@ -33,6 +46,7 @@ class Sectors:
         self.pitlane_entry = self.polys['Pitlane_entry']
         self.pitlane_exit = self.polys['Pitlane_Exit']
         self.paddock = self.polys['Paddock']
+        self.finish_line = self.lines['Finish_Line']
 
 #        self.transitions = {}
 #        self.transitions[track] = [pitlane_entry, pitlane_exit]
@@ -43,6 +57,9 @@ class Sectors:
 #        self.transitions[pitlane_gates] = [paddock, pitlane]
 
 sectors = Sectors("sectors.geojson")
+
+# sys.exit(1)
+
 
 def files(path):
     _, _, filenames = next(walk(path))
@@ -87,10 +104,21 @@ for filename in files(path):
                 if m.group(12):
                     direction=float(m.group(12))
 
-                point = [[lon, lat]]
+                point = [lon, lat]
 
-                if sectors.pre_finish.contains_points(point):
-                    print("{}:{}:{}.{} pre_finish".format(hh, mm, ss, ms/100))
+                pre_finish = sectors.pre_finish.contains_points([point])
+                post_finish = sectors.post_finish.contains_points([point])
 
-                if sectors.post_finish.contains_points(point):
-                    print("{}:{}:{}.{} post_finish".format(hh, mm, ss, ms/100))
+                if pre_finish or post_finish:
+                    finish_center = np.array(sectors.finish_line[0])
+                    finish_direction = np.array(sectors.finish_line[1])
+                    moving_point = np.array(point)
+                    cross = np.cross(finish_direction - finish_center, moving_point - finish_center)
+                    sign = cross/np.abs(cross) 
+                    dist = sign * norm(cross)/norm(finish_direction - finish_center)
+
+                if pre_finish:
+                    print("{}:{}:{}.{} pre_finish {}".format(hh, mm, ss, ms/100, dist))
+
+                if post_finish:
+                    print("{}:{}:{}.{} post_finish {}".format(hh, mm, ss, ms/100, dist))
