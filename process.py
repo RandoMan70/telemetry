@@ -59,7 +59,6 @@ class Sectors:
                         coord2d.append([c[0], c[1]])
 
                     self.lines[name] = coord2d
-                    print(coord2d)
                     print("Loaded line {}".format(name))
 
         for n, poly in self.polys.items():
@@ -70,12 +69,12 @@ class Sectors:
             for point in line:
                 transformer.to_meters(point)
 
-        for n, poly in self.polys.items():
-            print(n)
-            for p in poly:
-                print(p)
+        # for n, poly in self.polys.items():
+        #     print(n)
+        #     for p in poly:
+        #         print(p)
 
-        print(self.origin)
+        # print(self.origin)
         # sys.exit(1)
 
         self.track = mpltPath.Path(self.polys['Track'])
@@ -91,8 +90,13 @@ class Sectors:
 
 sectors = Sectors("sectors.geojson")
 
-# sys.exit(1)
+def solve(x1, y1, x2, y2):
+    assert y1 <= 0
+    assert y2 >= 0
+    assert (y2 - y1) > 0
+    assert x2 > x1
 
+    return x1 - y1 * (x2 - x1) / (y2 - y1)
 
 def files(path):
     _, _, filenames = next(walk(path))
@@ -112,9 +116,56 @@ def files(path):
         for minute in sorted(order[run]):
             yield order[run][minute]
 
+class StateMngr:
+    def __init__(self):
+        self.pre_time = None
+        self.pre_distance = None
+    
+    def commit_pre(self, time, distance):
+        self.pre_time = time
+        self.pre_distance = distance
+    
+    def commit_post(self, time, distance):
+        ret = None
+        if self.pre_time != None:
+            ret = solve(self.pre_time, self.pre_distance, time, distance)
+        
+        self.pre_time = None
+        self.pre_distance = None
+        return ret
+
+class LapMngr():
+    def __init__(self, maxtime = 300):
+        self.time = None
+        self.maxtime = maxtime
+
+    def cross(self, time):
+        if self.time == None :
+            self.time = time
+            return None
+        
+        if time - self.time > self.maxtime:
+            self.time = time
+            return None
+        
+        ret = time - self.time
+        self.time = time
+        return ret
+
+def format_laptime(time):
+    mmss = int(math.floor(time))
+    frac = int(round(time % 1 * 100)) 
+    mm = int(time / 60)
+    ss = int(time % 60)
+    return "{}:{:02d}.{:02d}".format(mm, ss, frac)
+
+state_mngr = StateMngr()
+lap_mngr = LapMngr()
+
 rmc = re.compile("\$..RMC.([\d]{2})([\d]{2})([\d]{2})\.([\d]{2})\,A,([0-9]*)([0-9]{2}\.[0-9]*),(.),([0-9]*)([0-9]{2}\.[0-9]*),(.),([0-9\.]*),([0-9\.]*),([\d]{2})([\d]{2})([\d]{2})")
+
 for filename in files(path):
-    print(filename)
+    # print(filename)
     with open(path + filename, 'r') as f:
         for l in f:
             l=l.strip()
@@ -132,6 +183,8 @@ for filename in files(path):
                 lon=float(m.group(8)) + float(m.group(9))/60
                 lonH=m.group(10)
 
+                time = hh*3600+mm*60+ss+ms/1000
+
                 speed=float(m.group(11)) * 1.852
                 direction = None
                 if m.group(12):
@@ -144,16 +197,21 @@ for filename in files(path):
                 post_finish = sectors.post_finish.contains_points([point])
 
                 if pre_finish or post_finish:
-                    finish_center = np.array(sectors.finish_line[0])
-                    finish_direction = np.array(sectors.finish_line[1])
+                    finish_center = np.array(sectors.finish_line[1])
+                    finish_direction = np.array(sectors.finish_line[0])
                     moving_point = np.array(point)
                     cross = np.cross(finish_direction - finish_center, moving_point - finish_center)
                     sign = cross/np.abs(cross) 
                     dist = sign * norm(cross)/norm(finish_direction - finish_center)
-                    print("{} {} {}".format(hh*3600+mm*60+ss+ms/1000, dist, speed))
 
-                # if pre_finish:
-                #     print("{}:{}:{}.{} pre_finish {}".format(hh, mm, ss, ms/100, dist))
-
-                # if post_finish:
-                #     print("{}:{}:{}.{} post_finish {}".format(hh, mm, ss, ms/100, dist))
+                if pre_finish:
+                    state_mngr.commit_pre(time, dist)
+                
+                if post_finish:
+                    t = state_mngr.commit_post(time, dist)
+                    if t != None:
+                        laptime = lap_mngr.cross(t)
+                        if laptime != None:
+                            print("{}:{:02d}:{:02d} {}".format(hh+7, mm, ss, format_laptime(laptime)))
+                        else:
+                            print("----------")
