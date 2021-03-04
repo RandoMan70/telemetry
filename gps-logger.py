@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # Log data from serial port
 
-# Author: Diego Herranz
+# Author: Sergey Kovalev
 
 import argparse
 import serial
 import datetime
 import logging
+import time
 import sys
-
 
 log = logging.getLogger("gps")
 logging.basicConfig(level=logging.DEBUG, format='%(message)s')
@@ -17,12 +17,15 @@ parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFo
 parser.add_argument("-d", "--device", help="device to read from", default="/dev/ttyS2")
 parser.add_argument("-r", "--raw", help="enable m8n raw logs", default=True, type=bool)
 parser.add_argument("-l", "--log-dir", help="directory for logs", type=str, required=True)
+parser.add_argument("-s", "--sleep", help="sleep before start", type=int, default = None)
 args = parser.parse_args()
 logpath = args.log_dir + "/"
 runid_path = logpath + ".runid"
 file = None
 tag = None
 
+if args.sleep is not None:
+    time.sleep(args.sleep)
 
 def get_run_id():
     try:
@@ -109,16 +112,17 @@ def initialize_raw(ser: serial.Serial):
 
 log.info("Logging started. Ctrl-C to stop.")
 while True:
-    ser = serial.Serial(args.device, 115200, timeout=1)
-    initialize_raw(ser)
+    ser = serial.Serial(args.device, 115200,
+                        bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE,
+                        xonxoff=False, rtscts=False, dsrdtr=False,
+                        timeout=1)
     try:
         while True:
             newtag = datetime.datetime.now().strftime("%Y-%m-%dT%H.%M")
             switch_file(newtag)
             data = ser.read(1)
-            waiting = ser.inWaiting()
-            if waiting > 0:
-                data += ser.read(waiting)
+            if ser.in_waiting > 0:
+                data += ser.read(ser.in_waiting)
             if len(data) == 0:
                 log.error("No data received, reopening")
                 break
