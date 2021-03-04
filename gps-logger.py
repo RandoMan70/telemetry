@@ -125,6 +125,7 @@ while True:
                 data += ser.read(ser.in_waiting)
             if len(data) == 0:
                 log.error("No data received, reopening")
+                ser.close()
                 break
             file.write(data)
             file.flush()
